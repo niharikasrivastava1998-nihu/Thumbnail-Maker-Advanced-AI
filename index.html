@@ -1,43 +1,186 @@
-<script type="module">
-    import { GoogleGenerativeAI } from "https://esm.run/@google/generative-ai";
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Creator Core: Pro Theme Studio</title>
+    <link href="https://fonts.googleapis.com/css2?family=Bangers&family=Permanent+Marker&family=Anton&family=Oswald:wght@700&display=swap" rel="stylesheet">
+    <style>
+        :root { --bg: #09090b; --ui: #18181b; --accent: #3b82f6; --text: #f4f4f5; --panel: #27272a; }
+        body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); margin: 0; display: flex; height: 100vh; overflow: hidden; }
+        
+        .sidebar { width: 440px; background: var(--ui); padding: 20px; overflow-y: auto; border-right: 1px solid #333; }
+        .canvas-area { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #000; padding: 20px; }
+        
+        .tool-box { background: var(--panel); padding: 15px; border-radius: 12px; margin-bottom: 15px; border: 1px solid #3f3f46; }
+        h3 { font-size: 11px; text-transform: uppercase; color: var(--accent); margin: 0 0 10px 0; letter-spacing: 1.5px; }
+        
+        select, input, button { width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #3f3f46; background: #09090b; color: white; margin-bottom: 8px; font-size: 13px; box-sizing: border-box; }
+        .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+        .emoji-kbd { height: 120px; overflow-y: auto; background: #000; padding: 10px; border-radius: 8px; display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; font-size: 22px; cursor: pointer; }
+        
+        .btn-bake { background: var(--accent); border: none; font-weight: bold; cursor: pointer; padding: 15px; color: white; font-size: 15px; }
+        video { width: 100%; border-radius: 8px; margin-bottom: 10px; border: 1px solid #3f3f46; }
+        canvas { max-width: 100%; max-height: 80vh; border: 2px solid var(--accent); box-shadow: 0 0 50px rgba(0,0,0,0.8); }
+    </style>
+</head>
+<body>
 
+<div class="sidebar">
+    <h2 style="margin:0 0 15px 0; color:var(--accent);">📐 Creator Core Studio</h2>
+    
+    <div class="tool-box">
+        <h3>1. Media & Format</h3>
+        <input type="file" id="vidIn" accept="video/*">
+        <video id="v" controls></video>
+        <select id="ratio">
+            <option value="1280/720">YouTube (16:9)</option>
+            <option value="1080/1920">TikTok / Reels (9:16)</option>
+            <option value="1200/627">LinkedIn (1.91:1)</option>
+            <option value="1080/1080">Instagram (1:1)</option>
+        </select>
+    </div>
+
+    <div class="tool-box">
+        <h3>2. Trained Style Preset</h3>
+        <select id="theme" onchange="applyPreset()">
+            <option value="none">Choose a Reference Style...</option>
+            <option value="funky">🔥 Funky (MrBeast Style)</option>
+            <option value="emoji">😂 Emoji Challenge (Grayscale + Emoji)</option>
+            <option value="paper">✂️ Pro Paper Cutout (Layered Shadows)</option>
+            <option value="doodle">✏️ Pro Doodle Sketch (Yellow Highlighting)</option>
+        </select>
+    </div>
+
+    <div class="tool-box">
+        <h3>3. Independent Branding</h3>
+        <input type="file" id="logoIn" multiple accept="image/*">
+        <div id="logoControls"></div>
+    </div>
+
+    <div class="tool-box">
+        <h3>4. Typography Suite</h3>
+        <input type="text" id="tMain" placeholder="Headline...">
+        <div class="grid-3">
+            <select id="tFont">
+                <option value="Bangers">Bangers</option>
+                <option value="'Permanent Marker'">Marker</option>
+                <option value="Anton">Anton</option>
+                <option value="Oswald">Oswald</option>
+            </select>
+            <input type="color" id="tCol" value="#ffffff">
+            <button onclick="data.b = !data.b; bake();">B</button>
+        </div>
+    </div>
+
+    <div class="tool-box">
+        <h3>5. Emoji Keyboard</h3>
+        <div class="emoji-kbd" id="kbd"></div>
+    </div>
+
+    <button class="btn-bake" onclick="bake()">BAKE DESIGN</button>
+    <button class="btn-bake" style="background:#10b981; margin-top:5px;" onclick="dl()">DOWNLOAD PNG</button>
+</div>
+
+<div class="canvas-area"><canvas id="c"></canvas></div>
+
+<script>
     const vid = document.getElementById('v'), can = document.getElementById('c'), ctx = can.getContext('2d');
     let data = { logos: [], emojis: [], b: false };
 
-    // UPDATED MODEL SELECTION
-    // Using gemini-3-flash-preview for 2026 frontier performance
-    const MODEL_NAME = "gemini-3-flash-preview"; 
+    // Initialize Keyboard
+    const ems = ["😂","🔥","😱","💯","🚀","👀","✨","✔️","⚠️","💰","💎","👑","⭐","📍","🔔","📢","💪","🙌","🤫","🎸"];
+    ems.forEach(e => {
+        let s = document.createElement('span'); s.innerText = e;
+        s.onclick = () => { data.emojis.push({e, x: Math.random()*0.8, y: Math.random()*0.8}); bake(); };
+        document.getElementById('kbd').appendChild(s);
+    });
 
-    window.runGeminiAI = async function() {
-        const key = document.getElementById('apiKey').value;
-        if (!key) return alert("Please paste your API key first.");
+    document.getElementById('vidIn').onchange = (e) => vid.src = URL.createObjectURL(e.target.files[0]);
+    document.getElementById('logoIn').onchange = (e) => {
+        Array.from(e.target.files).forEach((f, i) => {
+            const img = new Image(); img.src = URL.createObjectURL(f);
+            img.onload = () => {
+                data.logos.push({ img, pos: 'tr' });
+                addLogoUI(data.logos.length - 1, f.name);
+                bake();
+            };
+        });
+    };
 
-        // Configured for v1beta to support the newest Gemini 3 preview features
-        const genAI = new GoogleGenerativeAI(key);
-        const model = genAI.getGenerativeModel({ 
-            model: MODEL_NAME 
+    function addLogoUI(idx, name) {
+        const div = document.createElement('div');
+        div.innerHTML = `<label style="font-size:10px;">Logo ${idx+1}: ${name.substring(0,8)}</label>
+            <select onchange="data.logos[${idx}].pos = this.value; bake();">
+                <option value="tr">Top Right</option><option value="tl">Top Left</option>
+                <option value="br">Bottom Right</option><option value="bl">Bottom Left</option>
+            </select>`;
+        document.getElementById('logoControls').appendChild(div);
+    }
+
+    function applyPreset() {
+        const t = document.getElementById('theme').value;
+        if(t === 'funky') { document.getElementById('tFont').value = 'Bangers'; document.getElementById('tCol').value = '#ffff00'; }
+        else if(t === 'emoji') { document.getElementById('tFont').value = 'Anton'; }
+        else if(t === 'doodle') { document.getElementById('tFont').value = "'Permanent Marker'"; document.getElementById('tCol').value = '#ffffff'; }
+        bake();
+    }
+
+    function bake() {
+        const [W, H] = document.getElementById('ratio').value.split('/').map(Number);
+        can.width = W; can.height = H;
+        const theme = document.getElementById('theme').value;
+
+        // 1. BASE FILTER (Trained on Funky and Emoji)
+        if(theme === 'emoji') ctx.filter = "grayscale(1) contrast(1.2)";
+        else if(theme === 'funky') ctx.filter = "contrast(1.7) saturate(1.6)";
+        else ctx.filter = "none";
+
+        const vR = vid.videoWidth / vid.videoHeight, tR = W / H;
+        let dW = W, dH = H;
+        if (vR > tR) dW = H * vR; else dH = W / vR;
+        ctx.drawImage(vid, (W - dW)/2, (H - dH)/2, dW, dH);
+        ctx.filter = "none";
+
+        // 2. THEME EFFECTS
+        if (theme === 'paper') {
+            ctx.save(); ctx.strokeStyle = "white"; ctx.lineWidth = W*0.025; ctx.shadowBlur = 40; ctx.shadowColor = "rgba(0,0,0,0.8)";
+            ctx.beginPath(); ctx.moveTo(40,40); ctx.lineTo(W-40, 50); ctx.lineTo(W-50, H-40); ctx.lineTo(50, H-50); ctx.closePath();
+            ctx.stroke(); ctx.restore(); //
+        } else if (theme === 'doodle') {
+            ctx.strokeStyle = "#FFEB3B"; ctx.lineWidth = W*0.015; ctx.setLineDash([20, 15]);
+            ctx.beginPath(); 
+            for(let i=0; i<360; i+=15){
+                let r = (W*0.3) + Math.random()*30;
+                let rad = i*Math.PI/180;
+                ctx.lineTo(W/2 + r*Math.cos(rad), H/2 + r*Math.sin(rad));
+            }
+            ctx.closePath(); ctx.stroke(); ctx.setLineDash([]); //
+        } else if (theme === 'funky') {
+            const g = ctx.createLinearGradient(0,0,W,H); g.addColorStop(0, "rgba(255,0,80,0.3)"); g.addColorStop(1, "rgba(0,242,234,0.3)");
+            ctx.fillStyle = g; ctx.fillRect(0,0,W,H); //
+        }
+
+        // 3. TYPOGRAPHY
+        const txt = document.getElementById('tMain').value;
+        if(txt) {
+            ctx.font = `${data.b ? 'bold ' : ''}${H*0.13}px ${document.getElementById('tFont').value}`;
+            ctx.fillStyle = document.getElementById('tCol').value; ctx.textAlign = "center";
+            ctx.shadowColor = "black"; ctx.shadowBlur = 20;
+            ctx.fillText(txt.toUpperCase(), W/2, H*0.85);
+        }
+
+        // 4. MULTI-DIRECTIONAL LOGOS
+        data.logos.forEach(lg => {
+            let lx = lg.pos.includes('r') ? W-220 : 40, ly = lg.pos.includes('b') ? H-140 : 40;
+            ctx.drawImage(lg.img, lx, ly, 180, 100);
         });
 
-        document.getElementById('status').innerText = "🤖 AI is analyzing... (Model: " + MODEL_NAME + ")";
+        // 5. EMOJI LAYER
+        data.emojis.forEach(em => { ctx.font = `${H*0.1}px Arial`; ctx.fillText(em.e, em.x*W, em.y*H); });
+    }
 
-        const frameData = can.toDataURL('image/jpeg').split(',')[1];
-        const userPrompt = document.getElementById('aiPrompt').value;
-
-        try {
-            const result = await model.generateContent([
-                `Task: Analyze this video frame for a 2025 recap. 
-                 Request: "${userPrompt}" 
-                 Output JSON: {"headline": "...", "filter": "vivid|noir|sepia", "effect": "paper|doodle|funky"}`,
-                { inlineData: { data: frameData, mimeType: "image/jpeg" } }
-            ]);
-            
-            const aiResponse = JSON.parse(result.response.text());
-            document.getElementById('status').innerText = "✨ Design Applied: " + aiResponse.headline;
-            bake(aiResponse);
-        } catch (err) {
-            // Error handling for 404s
-            document.getElementById('status').innerText = "❌ Model Error. Try 'gemini-2.5-flash' instead.";
-            console.error(err);
-        }
-    };
+    function dl() { const l = document.createElement('a'); l.download = 'thumb.png'; l.href = can.toDataURL(); l.click(); }
 </script>
+</body>
+</html>
