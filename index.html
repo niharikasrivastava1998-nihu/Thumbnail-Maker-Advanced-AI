@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Creator Studio: Gemini Edition</title>
+    <link href="https://fonts.googleapis.com/css2?family=Bangers&family=Permanent+Marker&family=Anton&display=swap" rel="stylesheet">
+    <style>
+        :root { --bg: #09090b; --ui: #18181b; --accent: #3b82f6; --ai-purple: #8b5cf6; }
+        body { font-family: 'Inter', sans-serif; background: var(--bg); color: #fff; margin: 0; display: flex; height: 100vh; overflow: hidden; }
+        
+        .sidebar { width: 450px; background: var(--ui); padding: 25px; overflow-y: auto; border-right: 1px solid #333; }
+        .canvas-area { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #000; padding: 20px; }
+        
+        .ai-status { background: linear-gradient(135deg, #2e1065, #4c1d95); padding: 15px; border-radius: 12px; border: 1px solid var(--ai-purple); margin-bottom: 20px; font-size: 13px; }
+        .box { background: #27272a; padding: 18px; border-radius: 14px; margin-bottom: 20px; border: 1px solid #3f3f46; }
+        h3 { font-size: 11px; text-transform: uppercase; color: var(--accent); margin: 0 0 10px 0; letter-spacing: 1.5px; }
+        
+        input, select, button, textarea { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #3f3f46; background: #09090b; color: white; margin-bottom: 10px; font-size: 13px; box-sizing: border-box; }
+        .btn-ai { background: var(--ai-purple); border: none; font-weight: bold; cursor: pointer; padding: 15px; color: white; transition: 0.3s; }
+        .btn-ai:disabled { opacity: 0.5; cursor: not-allowed; }
+        
+        video { width: 100%; border-radius: 12px; border: 1px solid #3f3f46; margin-bottom: 15px; }
+        canvas { max-width: 100%; max-height: 80vh; border-radius: 8px; box-shadow: 0 0 80px rgba(0,0,0,0.8); }
+    </style>
+</head>
+<body>
+
+<div class="sidebar">
+    <div class="ai-status">
+        <strong style="color:#c084fc;">🤖 GEMINI AI STATUS:</strong>
+        <p id="ai-msg">Awaiting API Key. Get yours at AI Studio.</p>
+    </div>
+
+    <div class="box">
+        <h3>1. API Configuration</h3>
+        <input type="password" id="apiKey" placeholder="Paste Gemini API Key Here...">
+    </div>
+
+    <div class="box">
+        <h3>2. Media & Ratio</h3>
+        <input type="file" id="vidIn" accept="video/*">
+        <select id="size">
+            <option value="1280/720">YouTube (16:9)</option>
+            <option value="1080/1920">TikTok/Reels (9:16)</option>
+            <option value="1200/627">LinkedIn (1.91:1)</option>
+        </select>
+        <video id="v" controls style="display:none;"></video>
+    </div>
+
+    <div class="box">
+        <h3>3. AI Design Prompt</h3>
+        <textarea id="prompt" placeholder="E.g. 'Make it look like a high-energy MrBeast video...'"></textarea>
+        <button class="btn-ai" id="aiBtn" onclick="askGemini()">✨ ANALYZE & AUTO-DESIGN</button>
+    </div>
+
+    <div id="manual-tools" style="display:none;">
+        <div class="box">
+            <h3>4. Typography & Branding</h3>
+            <input type="text" id="tMain" placeholder="AI Suggested Title...">
+            <input type="file" id="logoIn" multiple>
+        </div>
+    </div>
+
+    <button class="btn-ai" style="background:#10b981; margin-top:10px;" onclick="dl()">DOWNLOAD PNG</button>
+</div>
+
+<div class="canvas-area">
+    <canvas id="c"></canvas>
+</div>
+
+<script type="module">
+    import { GoogleGenerativeAI } from "https://esm.run/@google/generative-ai";
+
+    const vid = document.getElementById('v'), can = document.getElementById('c'), ctx = can.getContext('2d');
+    let layers = { logos: [], emojis: [] };
+
+    document.getElementById('vidIn').onchange = (e) => {
+        vid.src = URL.createObjectURL(e.target.files[0]);
+        document.getElementById('ai-msg').innerText = "Video loaded. Click 'Analyze' to start AI processing.";
+    };
+
+    // --- GEMINI INTEGRATION ---
+    window.askGemini = async function() {
+        const key = document.getElementById('apiKey').value;
+        if (!key) return alert("Please enter your Gemini API Key.");
+
+        const genAI = new GoogleGenerativeAI(key);
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+        document.getElementById('ai-msg').innerText = "Gemini is analyzing the video frame...";
+        
+        // 1. Capture the current frame as Base64
+        const imageData = can.toDataURL('image/jpeg', 0.8).split(',')[1];
+        
+        const userPrompt = document.getElementById('prompt').value || "Analyze this video frame and suggest a viral headline, a filter (Vivid, Noir, or Vintage), and an effect (Paper, Doodle, or Funky).";
+
+        try {
+            const result = await model.generateContent([
+                userPrompt,
+                { inlineData: { data: imageData, mimeType: "image/jpeg" } }
+            ]);
+            const response = await result.response;
+            const text = response.text();
+            
+            document.getElementById('ai-msg').innerText = "AI Analysis Complete: " + text.substring(0, 100) + "...";
+            
+            // Logic to automatically adjust UI based on AI text
+            if(text.toLowerCase().includes('funky')) applyStyles('funky', 'contrast(1.7) saturate(1.6)');
+            if(text.toLowerCase().includes('doodle')) applyStyles('doodle', 'none');
+            
+            bake();
+        } catch (err) {
+            document.getElementById('ai-msg').innerText = "Error: " + err.message;
+        }
+    };
+
+    function bake() {
+        const [W, H] = document.getElementById('size').value.split('/').map(Number);
+        can.width = W; can.height = H;
+        
+        // Smart Size Adaptation
+        const vR = vid.videoWidth / vid.videoHeight, tR = W / H;
+        let dW = W, dH = H;
+        if (vR > tR) dW = H * vR; else dH = W / vR;
+        
+        ctx.drawImage(vid, (W - dW)/2, (H - dH)/2, dW, dH);
+        
+        // Effects based on AI logic
+        // (Doodle, Paper Cutout, Funky logic goes here...)
+    }
+
+    window.dl = function() {
+        const l = document.createElement('a'); l.download = 'ai-thumb.png'; l.href = can.toDataURL(); l.click();
+    };
+</script>
+</body>
+</html>
